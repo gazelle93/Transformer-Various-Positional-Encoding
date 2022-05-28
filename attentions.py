@@ -76,10 +76,6 @@ class T5ScaledDotProductAttention(nn.Module):
 
     def forward(self, query, key, value, relative_bias, mask = None):
         # Scaled score of the Matrix multiplication of query and key (e)
-        print(torch.bmm(query, key.transpose(1, 2)).size())
-        print(relative_bias.size())
-        print(relative_bias.permute(2,0,1).size())
-
         attn_score = torch.bmm(query, key.transpose(1, 2)) / self.scaling_factor + relative_bias.permute(2,0,1)
 
         # Masking (Optional)
@@ -198,9 +194,9 @@ class MultiHeadAttention(nn.Module):
 
         # final feed-forward network
         output = self.out_proj(output)
-        
+
         if is_dropout:
             output = self.dropout(output)
             return output, attn_score
-        
+
         return output, attn_score
