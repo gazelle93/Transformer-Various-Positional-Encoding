@@ -99,12 +99,13 @@ class T5ScaledDotProductAttention(nn.Module):
 
 # Multi-Head Attention using Relation Positional Encoding
 class MultiHeadAttention(nn.Module):
-    def __init__(self, emb_dim, num_heads, positional_encoding="abs"):
+    def __init__(self, emb_dim, num_heads, positional_encoding="abs", dropout_rate=0.1):
         super(MultiHeadAttention, self).__init__()
 
         self.head_dim = int(emb_dim / num_heads)
         self.num_heads = num_heads
         self.positional_encoding = positional_encoding
+        self.dropout = nn.Dropout(p=dropout_rate)
 
         # initialize one feed-forward layer (head dimension x number of heads) of each q, k and v
         # instead of initializing number of heads of feed-forward layers (head dimension / number of heads)
@@ -197,5 +198,9 @@ class MultiHeadAttention(nn.Module):
 
         # final feed-forward network
         output = self.out_proj(output)
-
+        
+        if is_dropout:
+            output = self.dropout(output)
+            return output, attn_score
+        
         return output, attn_score
