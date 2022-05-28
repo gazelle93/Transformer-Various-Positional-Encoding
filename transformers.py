@@ -19,14 +19,14 @@ class TransformerEncoderBlock(nn.Module):
 
         self.outLayerNorm = nn.LayerNorm(emb_dim, eps=1e-05)
 
-    def forward(self, input_embedding, relative_bias=None):
+    def forward(self, input_embedding, relative_bias=None, is_dropout=True):
         query = key = value = input_embedding
 
         # multi-head-attention layer
         if self.positional_encoding == "t5":
-            hidden_states, attn_score = self.encoder_layers(query, key, value, relative_bias=relative_bias)
+            hidden_states, attn_score = self.encoder_layers(query, key, value, relative_bias=relative_bias, is_dropout=is_dropout)
         else:
-            hidden_states, attn_score = self.encoder_layers(query, key, value)
+            hidden_states, attn_score = self.encoder_layers(query, key, value, is_dropout=is_dropout)
 
         # add & norm layer
         hidden_states = self.midLayerNorm(input_embedding+hidden_states)
@@ -58,20 +58,26 @@ class TransformerEncoder(nn.Module):
             output_list.append(output)
             attn_score_list.append(attn_score)
 
-            for i in range(1, self.num_layers):
+            for i in range(1, self.num_layers-1):
                 output, attn_score = self.encoder_blocks[i](output, relative_bias)
                 output_list.append(output)
                 attn_score_list.append(attn_score)
+            output, attn_score = self.encoder_blocks[self.num_layers-1](output, relative_bias, is_dropout=False)
+            output_list.append(output)
+            attn_score_list.append(attn_score)
 
         else:
             output, attn_score = self.encoder_blocks[0](input_embedding)
             output_list.append(output)
             attn_score_list.append(attn_score)
 
-            for i in range(1, self.num_layers):
+            for i in range(1, self.num_layers-1):
                 output, attn_score = self.encoder_blocks[i](output)
                 output_list.append(output)
                 attn_score_list.append(attn_score)
+            output, attn_score = self.encoder_blocks[self.num_layers-1](output, relative_bias, is_dropout=False)
+            output_list.append(output)
+            attn_score_list.append(attn_score)
 
         return output, output_list, attn_score_list
 
