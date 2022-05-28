@@ -146,7 +146,7 @@ class MultiHeadAttention(nn.Module):
         return _tensor.contiguous().view(batch_size, -1, self.num_heads * self.head_dim)
 
 
-    def forward(self, query, key, value, mask = None, relative_bias=None):
+    def forward(self, query, key, value, mask = None, relative_bias=None, is_dropout=True):
         # shape of input of q, k and v: (batch size, input length, embedding dimension)
         batch_size = query.size()[0]
 
