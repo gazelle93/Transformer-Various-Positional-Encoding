@@ -136,9 +136,10 @@ class MultiHeadAttention(nn.Module):
 
 
     def reshape_to_concat(self, batch_size, _tensor):
-        # before shape: (batch size, number of heads, input length, head dimension)
+        # before shape: (number of heads, batch size, input length, head dimension)
         # after shape: (batch size, input length, number of heads, head dimension)
-        _tensor = _tensor.permute(0, 2, 1, 3)
+        _tensor = _tensor.permute(1, 2, 0, 3)
+        # return shape: (batch size, input length, number of heads * head dimension)
         return _tensor.contiguous().view(batch_size, -1, self.num_heads * self.head_dim)
 
 
