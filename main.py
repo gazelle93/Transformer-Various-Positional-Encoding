@@ -1,6 +1,5 @@
 import torch
 import argparse
-from text_processing import get_nlp_pipeline, word_tokenization
 import my_onehot
 from transformers import get_output
 
