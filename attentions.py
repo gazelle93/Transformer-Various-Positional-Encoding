@@ -20,7 +20,7 @@ class ScaledDotProductAttention(nn.Module):
         # Masking (Optional)
         # shape of mask: (batch size, input length of query, input length of key)
         if mask is not None:
-            attn_score.masked_fill_(mask, -1e18)
+            attn_score = attn_score.masked_fill(mask, torch.finfo(attn_score.dtype).min)
 
         # Softmax of the scaled score (alpha)
         attn_score = F.softmax(attn_score, -1)
@@ -50,7 +50,7 @@ class RelativeScaledDotProductAttention(nn.Module):
         # Masking (Optional)
         # shape of mask: (batch size, input length of query, input length of key)
         if mask is not None:
-            attn_score.masked_fill_(mask, -1e18)
+            attn_score = attn_score.masked_fill(mask, torch.finfo(attn_score.dtype).min)
 
         # Softmax of the scaled score (alpha)
         attn_score = F.softmax(attn_score, -1)
@@ -76,12 +76,17 @@ class T5ScaledDotProductAttention(nn.Module):
 
     def forward(self, query, key, value, relative_bias, mask = None):
         # Scaled score of the Matrix multiplication of query and key (e)
-        attn_score = torch.bmm(query, key.transpose(1, 2)) / self.scaling_factor + relative_bias.permute(2,0,1)
+        # relative_bias arrives as (seq_len_q, seq_len_k, num_heads) and is
+        # shared across the batch; expand it to match (batch * heads, Lq, Lk)
+        bias = relative_bias.permute(2, 0, 1)
+        batch_heads = query.size(0)
+        bias = bias.repeat(batch_heads // bias.size(0), 1, 1)
+        attn_score = torch.bmm(query, key.transpose(1, 2)) / self.scaling_factor + bias
 
         # Masking (Optional)
         # shape of mask: (batch size, input length of query, input length of key)
         if mask is not None:
-            attn_score.masked_fill_(mask, -1e18)
+            attn_score = attn_score.masked_fill(mask, torch.finfo(attn_score.dtype).min)
 
         # Softmax of the scaled score (alpha)
         attn_score = F.softmax(attn_score, -1)
@@ -136,9 +141,9 @@ class MultiHeadAttention(nn.Module):
 
 
     def reshape_to_concat(self, batch_size, _tensor):
-        # before shape: (number of heads, batch size, input length, head dimension)
+        # before shape: (batch size, number of heads, input length, head dimension)
         # after shape: (batch size, input length, number of heads, head dimension)
-        _tensor = _tensor.permute(1, 2, 0, 3)
+        _tensor = _tensor.permute(0, 2, 1, 3)
         # return shape: (batch size, input length, number of heads * head dimension)
         return _tensor.contiguous().view(batch_size, -1, self.num_heads * self.head_dim)
 
@@ -166,9 +171,12 @@ class MultiHeadAttention(nn.Module):
         value = self.reshape_to_ScaledDotProductAttention(batch_size, value)
 
 
-        # shape of mask: (batch size, number of heads, input length of query, input length of key)
+        # the attention tensors are (batch * heads, Lq, Lk), so the mask has to
+        # be flattened the same way rather than left as (batch, heads, Lq, Lk)
         if mask is not None:
-            mask = mask.unsqueeze(1).repeat(1, self.num_heads, 1, 1)
+            if mask.dim() == 3:          # (batch, Lq, Lk), shared across heads
+                mask = mask.unsqueeze(1).repeat(1, self.num_heads, 1, 1)
+            mask = mask.reshape(batch_size * self.num_heads, mask.size(-2), mask.size(-1))
 
         if self.positional_encoding == "abs":
             output, attn_score = self.scaled_dot_attn(query, key, value, mask)
@@ -186,11 +194,15 @@ class MultiHeadAttention(nn.Module):
 
 
         # reshape the result of the ScaledDotProductAttention
-        # shape: (number of heads, batch size, input length, head dimension)
-        output = output.view(self.num_heads, batch_size, -1, self.head_dim)
+        # reshape_to_ScaledDotProductAttention packed this batch-major, so the
+        # flat index is (batch * num_heads + head). Unpacking it as
+        # (num_heads, batch, ...) mixes heads across batch rows and silently
+        # returns the wrong answer for any batch_size > 1.
+        # shape: (batch size, number of heads, input length, head dimension)
+        output = output.view(batch_size, self.num_heads, -1, self.head_dim)
 
         # reshape to concat
-        # shape: (number of heads, batch size, input length, head dimension)
+        # shape: (batch size, input length, number of heads * head dimension)
         output = self.reshape_to_concat(batch_size, output)
 
         # final feed-forward network
@@ -198,6 +210,5 @@ class MultiHeadAttention(nn.Module):
 
         if is_dropout:
             output = self.dropout(output)
-            return output, attn_score
 
         return output, attn_score
