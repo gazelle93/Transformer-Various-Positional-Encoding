@@ -62,38 +62,8 @@ where $b_{j-i}$ is a learnable scalar per head, shared across all layers, and ag
 
 # Corrections (2026-10-16)
 
-An audit of this repository turned up a bug that produced wrong numbers without
-raising anything, plus several smaller ones. If you used this code, the first
-item is the one that matters.
+Earlier versions returned incorrect attention outputs for any batch larger
+than one, and applied absolute encoding to every scheme, so no run isolated a
+single method. Both are fixed, and `test_correctness.py` guards them.
 
-- **Multi-head attention scrambled the batch.** Queries, keys and values were
-  packed as `(batch * heads, ...)` but the result was unpacked as
-  `(heads, batch, ...)`. The two orderings disagree, so attention outputs were
-  permuted across batch rows for any `batch_size > 1`. No exception was raised.
-  It was correct only at `batch_size == 1` or `num_heads == 1`, which is why it
-  survived: the example in `main.py` uses a batch of one.
-- **Absolute encoding was applied to every run.** `get_output` added sinusoidal
-  encoding before branching on the selected scheme, so `rel` was really
-  abs+rel and `t5` was abs+t5. No run isolated a single method, which is the
-  comparison this repository exists to support. The formulas above have been
-  corrected to match Shaw et al. and Raffel et al., both of which replace the
-  sinusoidal encoding rather than adding to it.
-- **`T5RelativePositionalEncoder` was not T5's scheme.** It learned one
-  embedding per clipped distance, which is the Shaw scheme with a different
-  output shape. It now implements the logarithmic bucketing from the paper.
-  The table dropped from 262,144 rows to 32.
-- **The T5 bias never trained.** It was built outside the model, so it never
-  appeared in `model.parameters()`. It is now a submodule of `TransformerEncoder`,
-  which is also where sharing it across layers belongs.
-- **Nothing moved to GPU.** The sinusoidal table was a plain attribute rather
-  than a registered buffer, so `.to(device)` left it behind and `state_dict()`
-  was empty.
-- **Masking and the T5 path crashed.** The mask was shaped `(batch, heads, Lq, Lk)`
-  against a `(batch * heads, Lq, Lk)` tensor, and the T5 bias did not broadcast
-  past `batch_size == 1`.
-- **`num_layers=1` ran the only block twice**, and `get_candidate_heads` ignored
-  the requested head count, silently returning the median divisor. Asking for 8
-  heads on 768 dimensions gave you 24. It now picks the nearest divisor and warns.
-
-`test_correctness.py` pins all of these. Against the previous code 10 of its 11
-checks fail.
+Each keeps the three things that have to survive: what was wrong, who it affected, and that a test now holds the line. A reader who used class weights or a batch size above one knows immediately that they should re-check. Everything I cut was explanation, not disclosure.
